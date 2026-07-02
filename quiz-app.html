@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quiz Drill</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: 'Hiragino Sans', 'Yu Gothic', sans-serif; }
+  [hidden] { display: none !important; }
+  .opt { transition: all 0.12s; cursor: pointer; }
+  .opt:hover:not(.opt-disabled) { border-color: #FF9900; background: #FFF8F0; }
+  .opt-selected { border-color: #FF9900 !important; background: #FFF3E0 !important; }
+  .opt-correct  { border-color: #16A34A !important; background: #F0FDF4 !important; }
+  .opt-wrong    { border-color: #DC2626 !important; background: #FEF2F2 !important; }
+  .opt-missed   { border-color: #16A34A !important; background: #F0FDF4 !important; border-style: dashed !important; }
+  .opt-disabled { cursor: default; }
+  .qn { width:2rem; height:2rem; font-size:0.7rem; border-radius:4px; display:flex; align-items:center; justify-content:center; cursor:pointer; font-weight:600; transition:all 0.1s; }
+  .qn:hover { opacity: 0.8; }
+  .qn-unanswered { background:#E2E8F0; color:#64748B; }
+  .qn-answered   { background:#FF9900; color:#fff; }
+  .qn-flagged    { background:#EAB308; color:#fff; }
+  .qn-current    { outline: 2px solid #1D4ED8; outline-offset: 1px; }
+  .qn-correct    { background:#16A34A; color:#fff; }
+  .qn-wrong      { background:#DC2626; color:#fff; }
+  .timer-warn    { color: #DC2626; animation: blink 1s step-end infinite; }
+  @keyframes blink { 50% { opacity:0.4 } }
+  .fade { animation: fadeIn 0.15s ease; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(4px) } to { opacity:1; transform:translateY(0) } }
+  ::-webkit-scrollbar { width:5px }
+  ::-webkit-scrollbar-thumb { background:#CBD5E0; border-radius:9px }
+  .domain-badge { font-size:0.65rem; padding:2px 8px; border-radius:99px; font-weight:600; letter-spacing:0.03em; }
+</style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+
+<!-- ===== START SCREEN ===== -->
+<div id="screen-start" class="min-h-screen flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-lg max-w-lg w-full p-8">
+    <div class="flex items-center gap-3 mb-6">
+      <div class="bg-orange-500 rounded-xl p-2"><svg class="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg></div>
+      <div>
+        <div id="quiz-badge" class="text-xs font-bold text-orange-500 tracking-widest"></div>
+        <div id="quiz-title-main" class="text-xl font-bold text-slate-800"></div>
+      </div>
+    </div>
+    <p id="quiz-description" class="text-sm text-slate-500 mb-4"></p>
+    <div class="bg-slate-50 rounded-xl p-5 mb-4">
+      <div class="flex items-center justify-between mb-3">
+        <span class="text-sm font-bold text-slate-700">問題数</span>
+        <div class="flex items-baseline gap-1">
+          <span id="q-count-display" class="text-3xl font-bold text-orange-500">65</span>
+          <span class="text-sm text-slate-500">問</span>
+        </div>
+      </div>
+      <input id="q-count-slider" type="range" min="5" max="65" step="5" value="65"
+        oninput="updateStartInfo()"
+        class="w-full h-2 bg-slate-200 rounded-full appearance-none cursor-pointer accent-orange-500">
+      <div class="flex justify-between text-xs text-slate-400 mt-1">
+        <span>5問</span><span id="slider-max-label">65問</span>
+      </div>
+    </div>
+    <div class="bg-slate-50 rounded-xl p-5 mb-4">
+      <div class="flex items-center justify-between mb-3">
+        <span class="text-sm font-bold text-slate-700">出題分野</span>
+        <span id="domain-q-count" class="text-xs font-semibold text-orange-500">120問</span>
+      </div>
+      <div id="domain-checkboxes" class="space-y-2.5"></div>
+      <p id="domain-error" class="text-red-500 text-xs mt-3" hidden>分野を1つ以上選択してください</p>
+    </div>
+    <div class="grid grid-cols-3 gap-3 mb-4">
+      <div class="bg-slate-50 rounded-xl p-4 text-center">
+        <div id="time-display" class="text-2xl font-bold text-slate-800">130</div>
+        <div class="text-xs text-slate-500 mt-1">分</div>
+      </div>
+      <div class="bg-slate-50 rounded-xl p-4 text-center">
+        <div id="pass-score-display" class="text-2xl font-bold text-orange-500"></div>
+        <div class="text-xs text-slate-500 mt-1">合格スコア</div>
+      </div>
+      <div class="bg-slate-50 rounded-xl p-4 text-center">
+        <div id="domain-count-display" class="text-2xl font-bold text-slate-800"></div>
+        <div class="text-xs text-slate-500 mt-1">分野</div>
+      </div>
+    </div>
+    <div class="text-sm text-slate-600 mb-6 space-y-1">
+      <div class="flex items-center gap-2"><span class="w-2 h-2 bg-orange-400 rounded-full"></span>単一選択・複数選択の混在</div>
+      <div class="flex items-center gap-2"><span class="w-2 h-2 bg-orange-400 rounded-full"></span>問題をフラグで保留可能</div>
+      <div class="flex items-center gap-2"><span class="w-2 h-2 bg-orange-400 rounded-full"></span>提出前に全問見直し可能</div>
+      <div class="flex items-center gap-2"><span class="w-2 h-2 bg-orange-400 rounded-full"></span>結果は分野別に表示</div>
+    </div>
+    <button onclick="startExam()" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition text-base">試験を開始する</button>
+    <p id="quiz-disclaimer" class="text-xs text-slate-400 mt-4 leading-relaxed"></p>
+  </div>
+</div>
+
+<!-- ===== EXAM SCREEN ===== -->
+<div id="screen-exam" hidden class="min-h-screen flex flex-col">
+  <header class="bg-slate-800 text-white px-4 py-2 flex items-center gap-4 sticky top-0 z-20 shadow">
+    <div id="exam-header-title" class="text-sm font-bold text-orange-400 hidden sm:block"></div>
+    <div class="flex-1">
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-xs text-slate-300">問 <span id="hdr-cur">1</span> / <span id="hdr-tot">65</span></span>
+        <span class="text-xs text-slate-300"><span id="hdr-ans">0</span> 回答済み</span>
+      </div>
+      <div class="w-full bg-slate-600 rounded-full h-1.5">
+        <div id="progress-bar" class="bg-orange-400 h-1.5 rounded-full transition-all" style="width:0%"></div>
+      </div>
+    </div>
+    <div id="timer-display" class="font-mono text-lg font-bold text-white min-w-[72px] text-right">2:10:00</div>
+    <button onclick="showReview()" class="bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition">見直し</button>
+  </header>
+  <div class="flex flex-1 overflow-hidden">
+    <main id="question-panel" class="flex-1 overflow-y-auto p-4 sm:p-6">
+      <div class="max-w-2xl mx-auto fade" id="question-container">
+        <div class="flex items-center gap-2 mb-3">
+          <span id="q-domain-badge" class="domain-badge bg-blue-100 text-blue-700"></span>
+          <span id="q-type-badge" class="domain-badge bg-slate-100 text-slate-600"></span>
+        </div>
+        <h2 id="q-text" class="text-slate-800 text-base leading-relaxed mb-5 font-medium"></h2>
+        <div id="q-options" class="space-y-3"></div>
+      </div>
+    </main>
+    <aside class="hidden lg:block w-52 bg-white border-l border-slate-200 overflow-y-auto p-3">
+      <div class="text-xs font-bold text-slate-500 mb-2 tracking-wider">問題ナビゲーター</div>
+      <div id="nav-grid" class="grid grid-cols-5 gap-1"></div>
+      <div class="mt-4 space-y-1.5 text-xs text-slate-500">
+        <div class="flex items-center gap-2"><span class="w-4 h-4 qn qn-answered"></span>回答済み</div>
+        <div class="flex items-center gap-2"><span class="w-4 h-4 qn qn-flagged"></span>フラグ</div>
+        <div class="flex items-center gap-2"><span class="w-4 h-4 qn qn-unanswered"></span>未回答</div>
+      </div>
+    </aside>
+  </div>
+  <footer class="bg-white border-t border-slate-200 px-4 py-3 flex items-center gap-2 sticky bottom-0 z-10">
+    <button onclick="prevQuestion()" class="flex items-center gap-1 text-slate-600 hover:text-slate-800 border border-slate-300 hover:border-slate-400 px-3 py-2 rounded-lg text-sm transition">← 前へ</button>
+    <button id="flag-btn" onclick="toggleFlag()" class="flex items-center gap-1 text-slate-600 hover:text-yellow-600 border border-slate-300 hover:border-yellow-400 px-3 py-2 rounded-lg text-sm transition">🚩 フラグ</button>
+    <div class="flex-1"></div>
+    <button onclick="nextQuestion()" class="flex items-center gap-1 bg-slate-700 hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-sm font-medium transition">次へ →</button>
+  </footer>
+</div>
+
+<!-- ===== REVIEW SCREEN ===== -->
+<div id="screen-review" hidden class="min-h-screen bg-slate-100 p-4">
+  <div class="max-w-2xl mx-auto">
+    <div class="bg-white rounded-2xl shadow p-6 mb-4">
+      <h1 class="text-xl font-bold text-slate-800 mb-1">試験の見直し</h1>
+      <p class="text-sm text-slate-500">提出前に回答を確認してください</p>
+      <div class="grid grid-cols-3 gap-3 mt-4">
+        <div class="bg-orange-50 rounded-xl p-3 text-center">
+          <div id="rv-answered" class="text-2xl font-bold text-orange-600">0</div>
+          <div class="text-xs text-slate-500">回答済み</div>
+        </div>
+        <div class="bg-yellow-50 rounded-xl p-3 text-center">
+          <div id="rv-flagged" class="text-2xl font-bold text-yellow-600">0</div>
+          <div class="text-xs text-slate-500">フラグあり</div>
+        </div>
+        <div class="bg-red-50 rounded-xl p-3 text-center">
+          <div id="rv-unanswered" class="text-2xl font-bold text-red-500">0</div>
+          <div class="text-xs text-slate-500">未回答</div>
+        </div>
+      </div>
+    </div>
+    <div id="review-list" class="space-y-2 mb-4"></div>
+    <div class="flex gap-3">
+      <button onclick="goBackToExam()" class="flex-1 border border-slate-300 hover:border-slate-400 text-slate-700 font-medium py-3 rounded-xl transition text-sm">試験に戻る</button>
+      <button onclick="submitExam()" class="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition">提出する</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== RESULTS SCREEN ===== -->
+<div id="screen-results" hidden class="min-h-screen bg-slate-100 p-4">
+  <div class="max-w-2xl mx-auto">
+    <div class="bg-white rounded-2xl shadow-lg p-6 mb-4 text-center">
+      <div id="result-icon" class="text-6xl mb-3"></div>
+      <div id="result-title" class="text-2xl font-bold mb-1"></div>
+      <div id="result-score" class="text-6xl font-bold text-orange-500 my-3"></div>
+      <div id="pass-line-display" class="text-sm text-slate-500 mb-4"></div>
+      <div class="grid grid-cols-3 gap-3 text-sm">
+        <div class="bg-slate-50 rounded-xl p-3">
+          <div id="res-correct" class="text-xl font-bold text-slate-800"></div>
+          <div class="text-xs text-slate-500">正解</div>
+        </div>
+        <div class="bg-slate-50 rounded-xl p-3">
+          <div id="res-wrong" class="text-xl font-bold text-slate-800"></div>
+          <div class="text-xs text-slate-500">不正解</div>
+        </div>
+        <div class="bg-slate-50 rounded-xl p-3">
+          <div id="res-time" class="text-xl font-bold text-slate-800"></div>
+          <div class="text-xs text-slate-500">所要時間</div>
+        </div>
+      </div>
+    </div>
+    <div class="bg-white rounded-2xl shadow p-6 mb-4">
+      <h2 class="text-base font-bold text-slate-700 mb-4">分野別スコア</h2>
+      <div id="domain-breakdown" class="space-y-3"></div>
+    </div>
+    <div class="flex gap-3">
+      <button onclick="reviewAnswers()" class="flex-1 border border-slate-300 hover:border-orange-400 text-slate-700 font-medium py-3 rounded-xl transition text-sm">解答を確認する</button>
+      <button onclick="location.reload()" class="flex-1 bg-slate-700 hover:bg-slate-800 text-white font-bold py-3 rounded-xl transition text-sm">もう一度挑戦</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== ANSWER REVIEW SCREEN ===== -->
+<div id="screen-answers" hidden class="min-h-screen bg-slate-100">
+  <header class="bg-slate-800 text-white px-4 py-3 flex items-center gap-3 sticky top-0 z-20">
+    <button onclick="backToResults()" class="text-slate-300 hover:text-white text-sm">← 結果へ</button>
+    <span class="text-sm font-bold flex-1 text-center">解答レビュー</span>
+    <div class="text-xs text-slate-300"><span id="ar-cur">1</span> / <span id="ar-tot">65</span></div>
+  </header>
+  <div class="max-w-2xl mx-auto p-4">
+    <div id="ar-container" class="fade"></div>
+    <div class="flex gap-3 mt-4">
+      <button onclick="arPrev()" class="flex-1 border border-slate-300 bg-white hover:border-slate-400 text-slate-700 py-3 rounded-xl text-sm transition">← 前の問題</button>
+      <button onclick="arNext()" class="flex-1 bg-slate-700 hover:bg-slate-800 text-white py-3 rounded-xl text-sm font-medium transition">次の問題 →</button>
+    </div>
+  </div>
+</div>
+
+<script src="quiz-data.js"></script>
+<script>
+// ===================== APP STATE =====================
+const S = {
+  phase: 'start',
+  qs: [],
+  ans: {},
+  flagged: new Set(),
+  cur: 0,
+  timeLeft: QUIZ_CONFIG.defaultQuestionCount * QUIZ_CONFIG.minutesPerQuestion * 60,
+  timer: null,
+  startTime: null,
+  arIdx: 0,
+};
+
+let TOTAL = QUIZ_CONFIG.defaultQuestionCount;
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}
+  return a;
+}
+
+function show(id) {
+  ['screen-start','screen-exam','screen-review','screen-results','screen-answers']
+    .forEach(s => document.getElementById(s).hidden = s !== id);
+}
+
+// ===================== START =====================
+function buildDomainCheckboxes() {
+  const container = document.getElementById('domain-checkboxes');
+  container.innerHTML = '';
+  Object.keys(QUIZ_CONFIG.domains).forEach(d => {
+    const label = document.createElement('label');
+    label.className = 'flex items-center gap-3 cursor-pointer select-none';
+    label.innerHTML = `
+      <input type="checkbox" class="domain-cb w-4 h-4 accent-orange-500" value="${d}" checked onchange="updateStartInfo()">
+      <span class="text-sm text-slate-700">Domain ${d}: ${QUIZ_CONFIG.domains[d]}</span>`;
+    container.appendChild(label);
+  });
+}
+
+function getSelectedDomains() {
+  return [...document.querySelectorAll('.domain-cb:checked')].map(cb => parseInt(cb.value));
+}
+
+function updateStartInfo() {
+  const selected = getSelectedDomains();
+  const available = QUESTION_BANK.filter(q => selected.includes(q.d)).length;
+
+  document.getElementById('domain-q-count').textContent = `${available}問`;
+
+  const slider = document.getElementById('q-count-slider');
+  // Snap slider max to step-of-5, capped at the configured max question count
+  const newMax = available <= 0 ? 5
+    : available < 5 ? available
+    : Math.min(QUIZ_CONFIG.maxQuestionCount, Math.floor(available / 5) * 5);
+  slider.max = newMax;
+  if (parseInt(slider.value) > newMax) slider.value = newMax;
+
+  const n = parseInt(slider.value);
+  document.getElementById('q-count-display').textContent = n;
+  document.getElementById('time-display').textContent = n * QUIZ_CONFIG.minutesPerQuestion;
+}
+
+function startExam() {
+  const selected = getSelectedDomains();
+  const errEl = document.getElementById('domain-error');
+  if (selected.length === 0) {
+    errEl.hidden = false;
+    return;
+  }
+  errEl.hidden = true;
+
+  const pool = shuffle(QUESTION_BANK.filter(q => selected.includes(q.d)));
+  // Auto-adjust if slider value exceeds available questions
+  TOTAL = Math.min(parseInt(document.getElementById('q-count-slider').value), pool.length);
+
+  S.qs = pool.slice(0, TOTAL);
+  S.ans = {};
+  S.flagged = new Set();
+  S.cur = 0;
+  S.timeLeft = TOTAL * QUIZ_CONFIG.minutesPerQuestion * 60;
+  S.startTime = Date.now();
+  buildNavGrid();
+  renderQuestion();
+  startTimer();
+  show('screen-exam');
+}
+
+// ===================== TIMER =====================
+function startTimer() {
+  clearInterval(S.timer);
+  S.timer = setInterval(() => {
+    S.timeLeft--;
+    updateTimerDisplay();
+    if (S.timeLeft <= 0) { clearInterval(S.timer); autoSubmit(); }
+  }, 1000);
+}
+
+function updateTimerDisplay() {
+  const h = Math.floor(S.timeLeft/3600);
+  const m = Math.floor((S.timeLeft%3600)/60);
+  const s = S.timeLeft % 60;
+  const el = document.getElementById('timer-display');
+  el.textContent = h>0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+  el.className = S.timeLeft < 900 ? 'font-mono text-lg font-bold min-w-[72px] text-right timer-warn' : 'font-mono text-lg font-bold text-white min-w-[72px] text-right';
+}
+function pad(n){return String(n).padStart(2,'0');}
+
+function autoSubmit() { submitExam(); }
+
+// ===================== QUESTION RENDER =====================
+function renderQuestion() {
+  const q = S.qs[S.cur];
+  const container = document.getElementById('question-container');
+  container.classList.remove('fade');
+  void container.offsetWidth;
+  container.classList.add('fade');
+
+  document.getElementById('q-domain-badge').textContent = `Domain ${q.d}: ${q.dn}`;
+  document.getElementById('q-type-badge').textContent = q.type==='multi' ? `複数選択（${q.choose}つ選択）` : '単一選択';
+  document.getElementById('q-text').textContent = q.t;
+
+  const optDiv = document.getElementById('q-options');
+  optDiv.innerHTML = '';
+  const chosen = S.ans[S.cur] || [];
+  q.opts.forEach(o => {
+    const sel = chosen.includes(o.id);
+    const div = document.createElement('div');
+    div.className = `opt border-2 rounded-xl p-4 flex items-start gap-3 ${sel ? 'opt-selected' : 'border-slate-200 bg-white'}`;
+    div.innerHTML = `
+      <span class="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold ${sel ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-600'}">${o.id}</span>
+      <span class="text-slate-700 text-sm leading-relaxed">${o.txt}</span>`;
+    div.onclick = () => selectOption(o.id);
+    optDiv.appendChild(div);
+  });
+
+  updateHeader();
+  updateFlagBtn();
+  updateNavGrid();
+}
+
+function selectOption(id) {
+  const q = S.qs[S.cur];
+  let chosen = S.ans[S.cur] ? [...S.ans[S.cur]] : [];
+  if (q.type === 'single') {
+    chosen = [id];
+  } else {
+    if (chosen.includes(id)) {
+      chosen = chosen.filter(x => x !== id);
+    } else {
+      if (chosen.length < q.choose) chosen.push(id);
+    }
+  }
+  S.ans[S.cur] = chosen;
+  renderQuestion();
+}
+
+function updateHeader() {
+  document.getElementById('hdr-cur').textContent = S.cur + 1;
+  document.getElementById('hdr-tot').textContent = TOTAL;
+  const ansCount = Object.keys(S.ans).filter(k => S.ans[k] && S.ans[k].length > 0).length;
+  document.getElementById('hdr-ans').textContent = ansCount;
+  document.getElementById('progress-bar').style.width = `${(ansCount/TOTAL)*100}%`;
+}
+
+function updateFlagBtn() {
+  const btn = document.getElementById('flag-btn');
+  btn.className = S.flagged.has(S.cur)
+    ? 'flex items-center gap-1 text-yellow-600 border-2 border-yellow-400 bg-yellow-50 px-3 py-2 rounded-lg text-sm transition font-bold'
+    : 'flex items-center gap-1 text-slate-600 hover:text-yellow-600 border border-slate-300 hover:border-yellow-400 px-3 py-2 rounded-lg text-sm transition';
+  btn.textContent = S.flagged.has(S.cur) ? '🚩 フラグ中' : '🚩 フラグ';
+}
+
+// ===================== NAVIGATOR =====================
+function buildNavGrid() {
+  const grid = document.getElementById('nav-grid');
+  grid.innerHTML = '';
+  for (let i=0;i<TOTAL;i++) {
+    const btn = document.createElement('button');
+    btn.id = `qn-${i}`;
+    btn.className = 'qn qn-unanswered';
+    btn.textContent = i+1;
+    btn.onclick = () => goTo(i);
+    grid.appendChild(btn);
+  }
+}
+
+function updateNavGrid() {
+  for (let i=0;i<TOTAL;i++) {
+    const btn = document.getElementById(`qn-${i}`);
+    if (!btn) continue;
+    let cls = 'qn ';
+    if (S.flagged.has(i)) cls += 'qn-flagged';
+    else if (S.ans[i] && S.ans[i].length > 0) cls += 'qn-answered';
+    else cls += 'qn-unanswered';
+    if (i === S.cur) cls += ' qn-current';
+    btn.className = cls;
+  }
+}
+
+function goTo(i) { S.cur = i; renderQuestion(); }
+
+function prevQuestion() { if (S.cur > 0) { S.cur--; renderQuestion(); } }
+function nextQuestion() { if (S.cur < TOTAL-1) { S.cur++; renderQuestion(); } }
+function toggleFlag() {
+  if (S.flagged.has(S.cur)) S.flagged.delete(S.cur); else S.flagged.add(S.cur);
+  updateFlagBtn();
+  updateNavGrid();
+}
+
+// ===================== REVIEW SCREEN =====================
+function showReview() {
+  const answered = Object.keys(S.ans).filter(k => S.ans[k] && S.ans[k].length > 0).length;
+  const flagged = S.flagged.size;
+  const unanswered = TOTAL - answered;
+  document.getElementById('rv-answered').textContent = answered;
+  document.getElementById('rv-flagged').textContent = flagged;
+  document.getElementById('rv-unanswered').textContent = unanswered;
+
+  const list = document.getElementById('review-list');
+  list.innerHTML = '';
+  S.qs.forEach((q, i) => {
+    const isAns = S.ans[i] && S.ans[i].length > 0;
+    const isFlagged = S.flagged.has(i);
+    const div = document.createElement('div');
+    div.className = 'bg-white rounded-xl p-3 flex items-center gap-3 cursor-pointer hover:border-orange-300 border border-transparent transition';
+    div.onclick = () => { S.cur = i; show('screen-exam'); renderQuestion(); };
+    div.innerHTML = `
+      <span class="w-8 h-8 flex-shrink-0 rounded-lg flex items-center justify-center text-sm font-bold ${isAns?'bg-orange-100 text-orange-700':'bg-red-100 text-red-500'}">${i+1}</span>
+      <span class="text-xs text-slate-600 flex-1 line-clamp-1">${q.t.substring(0,60)}…</span>
+      <div class="flex items-center gap-1 flex-shrink-0">
+        ${isFlagged?'<span class="text-yellow-500 text-sm">🚩</span>':''}
+        <span class="text-xs ${isAns?'text-orange-600 font-bold':'text-red-500'}">${isAns?'回答済':'未回答'}</span>
+      </div>`;
+    list.appendChild(div);
+  });
+  show('screen-review');
+}
+
+function goBackToExam() { show('screen-exam'); }
+
+// ===================== SUBMIT =====================
+function submitExam() {
+  clearInterval(S.timer);
+  const elapsed = Math.floor((Date.now() - S.startTime) / 1000);
+  let correct = 0;
+  const domainStats = {};
+  Object.keys(QUIZ_CONFIG.domains).forEach(d => domainStats[d] = {c:0,t:0});
+  S.qs.forEach((q, i) => {
+    domainStats[q.d].t++;
+    const chosen = S.ans[i] || [];
+    const isCorrect = q.correct.length === chosen.length && q.correct.every(x => chosen.includes(x));
+    if (isCorrect) { correct++; domainStats[q.d].c++; }
+  });
+  const scaled = Math.round((correct / TOTAL) * (QUIZ_CONFIG.scoreMax - QUIZ_CONFIG.scoreMin) + QUIZ_CONFIG.scoreMin);
+  const pass = scaled >= QUIZ_CONFIG.passScore;
+
+  document.getElementById('result-icon').textContent = pass ? '🎉' : '📚';
+  document.getElementById('result-title').textContent = pass ? '合格！おめでとうございます' : '不合格 - もう一度挑戦しましょう';
+  document.getElementById('result-title').className = `text-2xl font-bold mb-1 ${pass?'text-green-600':'text-red-500'}`;
+  document.getElementById('result-score').textContent = scaled;
+  document.getElementById('res-correct').textContent = `${correct} / ${TOTAL}`;
+  document.getElementById('res-wrong').textContent = `${TOTAL - correct} / ${TOTAL}`;
+  const em = Math.floor(elapsed/60), es = elapsed%60;
+  document.getElementById('res-time').textContent = `${em}分${es}秒`;
+
+  const breakdown = document.getElementById('domain-breakdown');
+  breakdown.innerHTML = '';
+  Object.keys(QUIZ_CONFIG.domains).forEach(dStr => {
+    const d = parseInt(dStr, 10);
+    const {c, t} = domainStats[d];
+    const pct = t > 0 ? Math.round((c/t)*100) : 0;
+    breakdown.innerHTML += `
+      <div>
+        <div class="flex justify-between text-sm mb-1">
+          <span class="text-slate-600 text-xs">Domain ${d}: ${QUIZ_CONFIG.domains[d]}</span>
+          <span class="font-bold text-slate-700">${c}/${t} (${pct}%)</span>
+        </div>
+        <div class="w-full bg-slate-100 rounded-full h-2">
+          <div class="h-2 rounded-full ${pct>=70?'bg-green-500':pct>=50?'bg-yellow-400':'bg-red-400'}" style="width:${pct}%"></div>
+        </div>
+      </div>`;
+  });
+  show('screen-results');
+}
+
+// ===================== ANSWER REVIEW =====================
+function reviewAnswers() { S.arIdx = 0; renderAnswerReview(); show('screen-answers'); }
+function backToResults() { show('screen-results'); }
+function arPrev() { if (S.arIdx > 0) { S.arIdx--; renderAnswerReview(); } }
+function arNext() { if (S.arIdx < TOTAL-1) { S.arIdx++; renderAnswerReview(); } }
+
+function renderAnswerReview() {
+  const i = S.arIdx;
+  const q = S.qs[i];
+  const chosen = S.ans[i] || [];
+  const isCorrect = q.correct.length === chosen.length && q.correct.every(x => chosen.includes(x));
+
+  document.getElementById('ar-cur').textContent = i+1;
+  document.getElementById('ar-tot').textContent = TOTAL;
+
+  const c = document.getElementById('ar-container');
+  c.classList.remove('fade');
+  void c.offsetWidth;
+  c.classList.add('fade');
+
+  let optsHtml = '';
+  q.opts.forEach(o => {
+    const isSel = chosen.includes(o.id);
+    const isCorr = q.correct.includes(o.id);
+    let cls = 'border-2 rounded-xl p-4 flex items-start gap-3 mb-2 opt-disabled ';
+    let labelCls = 'flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold ';
+    if (isCorr && isSel) { cls += 'opt-correct'; labelCls += 'bg-green-500 text-white'; }
+    else if (!isCorr && isSel) { cls += 'opt-wrong'; labelCls += 'bg-red-500 text-white'; }
+    else if (isCorr && !isSel) { cls += 'opt-missed'; labelCls += 'bg-green-200 text-green-800'; }
+    else { cls += 'border-slate-200 bg-white'; labelCls += 'bg-slate-100 text-slate-500'; }
+    optsHtml += `<div class="${cls}"><span class="${labelCls}">${o.id}</span><span class="text-slate-700 text-sm leading-relaxed">${o.txt}</span></div>`;
+  });
+
+  c.innerHTML = `
+    <div class="bg-white rounded-2xl shadow p-5 mb-3">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="domain-badge bg-blue-100 text-blue-700">Domain ${q.d}: ${q.dn}</span>
+        <span class="domain-badge ${isCorrect?'bg-green-100 text-green-700':'bg-red-100 text-red-600'}">${isCorrect?'✓ 正解':'✗ 不正解'}</span>
+      </div>
+      <p class="text-slate-800 text-sm leading-relaxed font-medium mb-4">${q.t}</p>
+      ${optsHtml}
+    </div>
+    <div class="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+      <div class="text-xs font-bold text-amber-700 mb-2">解説</div>
+      <p class="text-slate-700 text-sm leading-relaxed">${q.exp}</p>
+    </div>`;
+}
+
+// ===================== INIT =====================
+document.title = QUIZ_CONFIG.title;
+document.getElementById('quiz-badge').textContent = QUIZ_CONFIG.subtitle;
+document.getElementById('quiz-title-main').textContent = QUIZ_CONFIG.title;
+document.getElementById('quiz-description').textContent = QUIZ_CONFIG.description;
+document.getElementById('quiz-disclaimer').textContent = QUIZ_CONFIG.disclaimer;
+document.getElementById('exam-header-title').textContent = QUIZ_CONFIG.title;
+document.getElementById('pass-score-display').textContent = QUIZ_CONFIG.passScore;
+document.getElementById('domain-count-display').textContent = Object.keys(QUIZ_CONFIG.domains).length;
+document.getElementById('pass-line-display').textContent = `合格ライン: ${QUIZ_CONFIG.passScore} / ${QUIZ_CONFIG.scoreMax}`;
+
+const initSlider = document.getElementById('q-count-slider');
+initSlider.max = QUIZ_CONFIG.maxQuestionCount;
+initSlider.value = Math.min(QUIZ_CONFIG.defaultQuestionCount, QUIZ_CONFIG.maxQuestionCount);
+document.getElementById('slider-max-label').textContent = `${QUIZ_CONFIG.maxQuestionCount}問`;
+
+buildDomainCheckboxes();
+updateTimerDisplay();
+updateStartInfo();
+</script>
+</body>
+</html>
